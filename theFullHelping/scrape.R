@@ -1,15 +1,7 @@
 ## Web Scraping Recipes from Online Blogs
 ## Author: B. Himmetoglu
-## Scrape Site: http://pinchofyum.com/
-#
-# Load libraries
-library(tidyr)
-library(stringr)
-library(dplyr)
-library(purrr)
-library(rvest)
-library(jsonlite)
-library(lubridate)
+## Scrape Site: http://www.thefullhelping.com/
+
 
 # Load the functions in utilities
 source("utilities.R")
@@ -17,7 +9,7 @@ source("utilities.R")
 ## Get all the links (takes a while to run)
 if(!file.exists("all_links.RData")){
   # Get all the recipe links
-  all_links <- 1:51 %>% map(get_recipe_links) %>% unlist()
+  all_links <- 1:11 %>% map(get_recipe_links) %>% unlist()
   
   # Save for future use
   save(all_links, file="all_links.RData")
@@ -69,4 +61,3 @@ if(!file.exists("all_photos.RData")){
 } else {
   load(file="all_photos.RData")
 }
-

@@ -52,7 +52,7 @@ get_recipe_data <- function(link_to_recipe){
   }
   
   # Load the data to JSON
-  recipe_data <- fromJSON(html_text(script_[loc_json]))
+  recipe_data <- fromJSON(html_text(script_[loc_json][[1]]))
   
   ## From JSON get relevant features
   # Ingredients
@@ -141,7 +141,7 @@ get_recipe_image <- function(link_to_recipe, img_folder="./images"){
   }
   
   # Load the data to JSON
-  recipe_data <- fromJSON(html_text(script_[loc_json]))
+  recipe_data <- fromJSON(html_text(script_[loc_json][[1]]))
   
   # Image data
   img_link <- html_nodes(page, "meta")

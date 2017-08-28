@@ -28,14 +28,14 @@ names(all_recipes_df)
 ## [16] "fiberContent"        "proteinContent"      "cholesterolContent"
 ```
 
-The data contains 717 entries:
+The data contains 731 entries:
 
 ```r
 nrow(all_recipes_df)
 ```
 
 ```
-## [1] 717
+## [1] 731
 ```
 
 ### Data Wrangling
@@ -50,17 +50,17 @@ all_recipes_df %>% map_dbl(~sum(is.na(.x)))
 
 ```
 ##                name         description         ingredients 
-##                   0                 442                   0 
+##                   0                 333                   0 
 ##            prepTime            cookTime            nReviews 
-##                 446                 447                  89 
+##                 342                 346                  88 
 ##              rating         servingSize            calories 
-##                  89                 613                 451 
+##                  88                 623                 350 
 ##        sugarContent       sodiumContent          fatContent 
-##                 451                 451                 451 
+##                 350                 350                 350 
 ## saturatedFatContent     transFatContent carbohydrateContent 
-##                 451                 451                 451 
+##                 350                 350                 350 
 ##        fiberContent      proteinContent  cholesterolContent 
-##                 451                 451                 451
+##                 350                 350                 350
 ```
 
 ```r
@@ -69,10 +69,10 @@ all_recipes_df %>% filter(description =="") %>% count()
 ```
 
 ```
-## # A tibble: 1 x 1
+## # A tibble: 1 × 1
 ##       n
 ##   <int>
-## 1     6
+## 1     9
 ```
 As can be seen, more than half of the data is missing from nutritional information as well as from the description column. This is rather unfortunate, since one could have used these nutritional information for some interesting modelling. However, we can still gain some interesting insights from an exploratory study. For example, let's have a look at the words used in the `ingredients` column
 
@@ -96,17 +96,17 @@ df_ingrdt[1:10,]
 ```
 
 ```
-##     ID    word
-## 1    1       2
-## 1.1  1    cups
-## 1.2  1 lightly
-## 1.3  1  packed
-## 1.4  1 coconut
-## 1.5  1   sugar
-## 1.6  1       2
-## 1.7  1    eggs
-## 1.8  1       1
-## 1.9  1       2
+##     ID   word
+## 1    1      1
+## 1.1  1      4
+## 1.2  1    cup
+## 1.3  1  olive
+## 1.4  1    oil
+## 1.5  1      2
+## 1.6  1 cloves
+## 1.7  1 garlic
+## 1.8  1 minced
+## 1.9  1      1
 ```
 
 ```r
@@ -115,17 +115,17 @@ df_ingrdt[100:110,]
 
 ```
 ##      ID     word
-## 2.67  2     soba
-## 2.68  2  noodles
-## 2.69  2    fresh
-## 2.70  2 cilantro
-## 2.71  2       or
-## 2.72  2    basil
-## 2.73  2       to
-## 2.74  2    taste
-## 2.75  2  crushed
-## 2.76  2  peanuts
-## 2.77  2      for
+## 2.29  2       or
+## 2.30  2    other
+## 2.31  2  protein
+## 2.32  2       of
+## 2.33  2   choice
+## 3     3        1
+## 3.1   3  serving
+## 3.2   3       of
+## 3.3   3 strongly
+## 3.4   3   brewed
+## 3.5   3   coffee
 ```
 
 We will create word features from this data frame (`df_ingrdt`) below. Before doing so, we store the rating and review information, which we will then combine with the word features. 
@@ -143,19 +143,19 @@ df_ingrdt %>% count(word, sort = TRUE) %>% slice(1:10)
 ```
 
 ```
-## # A tibble: 10 x 2
+## # A tibble: 10 × 2
 ##           word     n
 ##          <chr> <int>
-## 1            1  4357
-## 2            2  2622
-## 3          cup  1792
-## 4            4  1045
-## 5            3   890
-## 6     teaspoon   801
-## 7         cups   769
-## 8  tablespoons   658
-## 9           or   588
-## 10        salt   537
+## 1            1  4417
+## 2            2  2661
+## 3          cup  1814
+## 4            4  1060
+## 5            3   901
+## 6     teaspoon   809
+## 7         cups   776
+## 8  tablespoons   670
+## 9           or   599
+## 10        salt   549
 ```
 
 Clearly, most of these words are uninformative. They mostly contain stop words (such as `or`, see below), units of measurement (in the world of cooking) and simple numbers. Let us remove such words
@@ -182,19 +182,19 @@ df_ingrdt %>% count(word, sort = TRUE) %>% slice(1:10)
 ```
 
 ```
-## # A tibble: 10 x 2
+## # A tibble: 10 × 2
 ##       word     n
 ##      <chr> <int>
-## 1     salt   537
-## 2      oil   405
-## 3   butter   357
-## 4    sugar   353
-## 5  chopped   311
-## 6   garlic   307
-## 7   cheese   306
-## 8    fresh   298
-## 9   minced   260
-## 10   flour   240
+## 1     salt   549
+## 2      oil   412
+## 3   butter   367
+## 4    sugar   358
+## 5  chopped   318
+## 6   garlic   315
+## 7   cheese   311
+## 8    fresh   302
+## 9   minced   264
+## 10   flour   242
 ```
 which looks much better! I could have used more elaborate feature extraction methods from the ingredients, but I want to keep things simple here. So let's just use the top 25 words appearing in the ingredients and use them as features
 
@@ -224,15 +224,15 @@ head(df_ingrdt)
 ```
 
 ```
-## # A tibble: 6 x 26
+## # A tibble: 6 × 26
 ##      ID baking brown butter cheese chicken chopped cloves cream flour
 ##   <int>  <dbl> <dbl>  <dbl>  <dbl>   <dbl>   <dbl>  <dbl> <dbl> <dbl>
-## 1     1      0     0      1      0       0       0      0     0     0
-## 2     2      0     0      1      0       1       1      0     0     0
-## 3     3      0     0      0      0       1       0      1     0     0
-## 4     4      0     0      0      0       0       0      0     0     0
+## 1     1      0     0      0      0       0       4      1     0     0
+## 2     2      0     0      0      0       1       1      0     0     0
+## 3     3      0     0      0      0       0       0      0     0     0
+## 4     4      0     2      0      0       0       2      1     0     0
 ## 5     5      0     0      1      0       0       0      0     0     0
-## 6     6      0     0      0      0       0       0      0     0     0
+## 6     6      0     1      0      1       0       0      1     0     1
 ## # ... with 16 more variables: fresh <dbl>, garlic <dbl>, juice <dbl>,
 ## #   milk <dbl>, minced <dbl>, oil <dbl>, olive <dbl>, pepper <dbl>,
 ## #   powder <dbl>, salt <dbl>, sauce <dbl>, shredded <dbl>, sugar <dbl>,
@@ -276,7 +276,7 @@ g0
 ```
 
 ```
-## Warning: Removed 89 rows containing non-finite values (stat_bin).
+## Warning: Removed 88 rows containing non-finite values (stat_bin).
 ```
 
 ![](foodBlogs_files/figure-html/unnamed-chunk-17-1.png)<!-- -->
