@@ -1,19 +1,17 @@
 ## Web Scraping Recipes from Online Blogs
 ## Author: B. Himmetoglu
-## Modelling
+## Modelling: How names of recipes are correlated with number of ratings?
 #
 # Load libraries
 library(tidyr)
 library(stringr)
 library(dplyr)
 library(purrr)
-library(rvest)
-library(jsonlite)
-library(lubridate)
 library(tidytext)
 library(tokenizers)
 library(syuzhet)
 library(ggplot2)
+library(SnowballC)
 
 # Load the data.frame of all recipes
 load(file="all_recipes.RData")
@@ -21,154 +19,96 @@ load(file="all_recipes.RData")
 # NAs
 all_recipes_df %>% map_dbl(~sum(is.na(.x)))
 
-# Empty descriptions
-all_recipes_df %>% filter(description =="") %>% count() # Only 6
-
-# Let's assign and ID number
+# Let's assign an ID number to each recipe
 all_recipes_df <- all_recipes_df %>% mutate(ID = 1:nrow(all_recipes_df))
 
-# Let's check the ingredient & rating relationship
-df_ingrdt <- all_recipes_df %>% 
-  select(ID, ingredients) %>%
-  mutate(ingredients = str_replace(ingredients, "\n", " ") %>% str_replace("<.*?>", " ")) %>%
-  unnest_tokens(word, ingredients)
+# Unnest all the tokens
+df_name <- all_recipes_df %>%
+  select(ID, name) %>%
+  unnest_tokens(word, name)
 
 # Store ratings and nReviews in a separate data frame
 df_reviews <- all_recipes_df %>% 
-  select(ID, name, rating, nReviews)
+  select(ID, name, rating, nReviews) %>%
+  mutate(rating = as.numeric(rating)) %>%
+  mutate(nReviews = as.integer(nReviews))
 
-# Let's look at the top 10 most commonly used words
-df_ingrdt %>% count(word, sort = TRUE) %>% slice(1:10)
+# Replace NA's in nReviews with 0
+df_reviews <- df_reviews %>%
+  mutate(nReviews = ifelse(is.na(nReviews),0,nReviews))
 
-# Remove stop words
+# Create a new column: large/small nReviews
+med_nRev <- median(df_reviews$nReviews)
+df_reviews <- df_reviews %>% 
+  mutate(highViews = ifelse(nReviews >= med_nRev, 1, 0))
+
+# Combine with raings
+# Remove stop words and numbers
 data("stop_words")
-
-# Also remove the following (which is not included in stopwords)
-word_remove = c("cup", "cups", "teaspoon", "teaspoons", "tablespoon", "tablespoons", 
-                "ounce", "ounces", "lb", "lbs", "tbs", "tsp", "oz", "handful", "handfull",
-                "inch", "i", "can")
-
-df_ingrdt <- df_ingrdt %>% 
+df_name <- df_name %>% 
   filter(!(word %in% stopwords())) %>%
-  filter(!(word %in% word_remove)) %>%
-  filter(!(str_detect(word, "[0-9]")))  # Remove numbers as well
+  filter(!(str_detect(word, "[0-9]")))
 
-# Now let's lokk at the top 10 most commonly used words
-df_ingrdt %>% count(word, sort = TRUE) %>% slice(1:10)
+# Get word stems
+df_name <- df_name %>%
+  mutate(word = wordStem(word))
 
-# Get the most common 25 words in the ingredients to be used in modellling
-top_words <- df_ingrdt %>% count(word, sort = TRUE) %>% slice(1:25)
-df_ingrdt <-df_ingrdt %>%
-  filter(word %in% top_words$word)
+# Now let's look at the top 10 most commonly used words
+df_name %>% count(word, sort = TRUE) %>% slice(1:10)
+
+# Combine df_reviews with df_name
+model_df <- left_join(df_reviews %>% select(ID, rating, highViews), 
+                      df_name, by = "ID")
+
+# Get the most common 25 words in the ingredients for visualization
+top_words <- model_df %>% count(word, sort = TRUE) %>% slice(1:25)
+
+# Visualize how words in title correlate with highviews
+df <- model_df %>% 
+  filter(word %in% top_words$word) %>%
+  group_by(highViews) %>%
+  count(word) %>%
+  ungroup(highViews) %>%
+  mutate(highViews = as.factor(highViews))
+
+gg <- ggplot(df, aes(word,n)) +
+  geom_bar(stat="identity", aes(fill=highViews), position = "dodge") + 
+  coord_flip()
+gg
+
+### Data frame for Modelling
 
 # Spread the word counts to columns
-df_ingrdt <- df_ingrdt %>% 
+df <- model_df %>% 
   group_by(ID) %>%
   count(word) %>%
   spread(key = word, value = n, fill = 0) %>%
   ungroup()
 
-# We actually do not want word couts per recipe, rather one-hot encoded word features
-vars <- setdiff(names(df_ingrdt), "ID")
-df_ingrdt <- df_ingrdt %>%
+# Only top words (choose 50 of them)
+top_words <- model_df %>% count(word, sort = TRUE) %>% slice(1:50)
+df <- df %>% select_(.dots = c("ID",top_words$word))
+model_df <- left_join(df, 
+                 model_df %>% select(ID, rating, highViews) %>% distinct(),
+                 by="ID")
+
+# One-hot encode instead of counts
+vars <- setdiff(names(model_df), c("ID","rating","highViews"))
+model_df <- model_df %>%
   mutate_at(vars, function(x) ifelse(x > 0, 1, 0))
 
-# Now combine with df_reviews by ID
-df_ingrdt_reviews <- df_reviews %>%
-  inner_join(df_ingrdt, by = "ID")
+# Train a model (e.g. randomForest)
+library(randomForest)
+library(caret)
+dat <- model_df %>% 
+  select(-c(ID,rating))
 
-# NAs
-df_ingrdt_reviews %>% map_dbl(~sum(is.na(.x)))
+ctrl <- trainControl(method="cv", number=10, verboseIter = TRUE)
+rf_grid <- expand.grid(mtry = c(2,5,10,15,20))
 
-# Let's just look at recipes with ratings
-df_ingrdt_reviews <- df_ingrdt_reviews %>%
-  mutate(rating = as.numeric(rating)) %>%
-  mutate(nReviews = as.numeric(nReviews))
+mod <- train(x = select(dat, -highViews), y = ifelse(dat$highViews == 1, "y","n"),
+             method = "rf", trControl = ctrl, tuneGrid = rf_grid)
 
-
-## Visualization
-
-# Distribution of reviews
-g0 <- ggplot(df_ingrdt_reviews, aes(rating)) + 
-  geom_histogram(color = "black", fill = "slateblue1", binwidth = 0.1) + 
-  geom_vline(xintercept = median(df_ingrdt_reviews$rating, na.rm = T), na.rm = TRUE, size = 0.6) + 
-  ylab("Counts") + ggtitle("Distribution of Average Ratings")
-g0
-
-g1 <- ggplot(df_ingrdt_reviews %>% filter(nReviews < 200), aes(nReviews)) + 
-  geom_histogram(color = "black", fill = "slateblue1", binwidth = 5) + 
-  geom_vline(xintercept = median(df_ingrdt_reviews$nReviews, na.rm = T), na.rm = TRUE, size = 0.6) + 
-  ylab("Counts") + ggtitle("Distribution of Number of Ratings")
-g1 
-
-## Principal components for ingredients
-data <- df_ingrdt %>% select(-ID)
-pc <- prcomp(data, scale = TRUE)
-
-# Plot the first two principal components
-biplot(pc, scale = FALSE, cex = c(0.2, 0.6) )
-
-### Let's look at descriptions
-
-# Non empty descriptions
-df_descript <- all_recipes_df %>% filter(description != "") %>% filter(!is.na(description))
-
-# Let's check the ingredient & rating relationship
-df_descript <- df_descript %>% 
-  select(ID, description) %>%
-  mutate(description = str_replace(description, "\n", " ") %>% str_replace("<.*?>", " ")) %>%
-  unnest_tokens(word, description)
-
-# Let's look at the top 10 most commonly used words
-df_descript %>% count(word, sort = TRUE) %>% slice(1:10)
-
-# Remove unwanted words
-df_descript <- df_descript %>% 
-  filter(!(word %in% stopwords())) %>%
-  filter(!(word %in% word_remove)) %>%
-  filter(!(str_detect(word, "[0-9]")))  # Remove numbers as well
-
-df_descript %>% count(word, sort = TRUE) %>% slice(1:10)
-
-# Get the most common 25 words in the ingredients to be used in modellling
-top_words <- df_descript %>% count(word, sort = TRUE) %>% slice(1:25)
-df_descript <-df_descript %>%
-  filter(word %in% top_words$word)
-
-# Spread the word counts to columns
-df_descript <- df_descript %>% 
-  group_by(ID) %>%
-  count(word) %>%
-  spread(key = word, value = n, fill = 0) %>%
-  ungroup()
-
-# Let's keep the word counts in this case
-# Principal components
-data <- df_descript %>% select(-ID)
-pc <- prcomp(data, scale = TRUE)
-
-# Plot the first two principal components
-biplot(pc, scale = FALSE, cex = c(0.2, 0.6) )
-
-# # We actually do not want word couts per recipe, rather one-hot encoded word features
-# vars <- setdiff(names(df_ingrdt), "ID")
-# df_ingrdt <- df_ingrdt %>%
-#   mutate_at(vars, function(x) ifelse(x > 0, 1, 0))
-
-
-# ## Models
-# library(pls)
-# set.seed(111)
-# data <- df_ingrdt_reviews %>%
-#   select(-c(ID,name,nReviews)) %>%
-#   filter(!is.na(rating)) %>%
-#   mutate(rating = log(rating))
-# pcr.fit <- pcr(rating~., data = data, scale=TRUE, validation = "CV")
-# summary(pcr.fit)
-#  
-# # Get only the first principal component
-# pc <- prcomp(data %>% select(-rating), scale = TRUE)
-# df_pc <- data.frame(PC1=pc$x[,1], rating = data$rating)
-# g3 <- ggplot(df_pc, aes(PC1, rating)) + geom_smooth(method = "lm")
-# g3
+# Print results
+mod$results
 
